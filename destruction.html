@@ -1,0 +1,936 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Интерактивное разрушение здания</title>
+  <style>
+    :root {
+      --bg: #16191f;
+      --panel: #232832;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --border: #3a4250;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at top, #2d3748 0, var(--bg) 56%);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .app {
+      width: min(96vw, 1120px);
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      background: color-mix(in srgb, var(--panel) 92%, black);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.25);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(18px, 3vw, 28px);
+      letter-spacing: -0.03em;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    input, button, select {
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #111827;
+      color: var(--text);
+      padding: 0 10px;
+      font: inherit;
+    }
+
+    input[type="text"] { width: 110px; }
+    input[type="range"] { width: 110px; padding: 0; }
+
+    button {
+      cursor: pointer;
+      background: #334155;
+      transition: transform 120ms ease, background 120ms ease;
+    }
+
+    button:hover {
+      background: #475569;
+      transform: translateY(-1px);
+    }
+
+    .stage {
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: rgba(15, 23, 42, 0.72);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      overflow: auto;
+    }
+
+    canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      width: min(92vw, 1000px);
+      height: auto;
+      background: #2f3b2f;
+      border: 4px solid #05070a;
+      border-radius: 8px;
+      box-shadow: 0 26px 60px rgba(0, 0, 0, 0.36);
+      cursor: crosshair;
+    }
+
+    .legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 14px;
+      padding: 0 2px;
+    }
+
+    .key {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="topbar">
+      <div>
+        <h1>Интерактивное разрушение здания</h1>
+        <div id="status" class="subtitle">Сначала здание целое. Клик по крыше/стене создаёт разрушение и открывает интерьер.</div>
+      </div>
+      <div class="controls">
+        <input id="seedInput" type="text" aria-label="Seed" value="house-001" />
+        <label>Размер
+          <select id="sizeSelect">
+            <option value="16x12">16×12</option>
+            <option value="20x14" selected>20×14</option>
+            <option value="26x18">26×18</option>
+            <option value="32x22">32×22</option>
+          </select>
+        </label>
+        <label>Сила <span id="blastLabel">60%</span>
+          <input id="blastInput" type="range" min="20" max="100" value="60" />
+        </label>
+        <button id="generateBtn">New building</button>
+        <button id="randomBtn">Random seed</button>
+        <button id="resetBtn">Reset damage</button>
+      </div>
+    </section>
+
+    <section class="stage">
+      <canvas id="canvas" width="1008" height="720"></canvas>
+    </section>
+
+    <section class="legend">
+      <span class="key"><span class="swatch" style="background:#46623c"></span>трава</span>
+      <span class="key"><span class="swatch" style="background:#5e6871"></span>тёмный скат крыши</span>
+      <span class="key"><span class="swatch" style="background:#7a858e"></span>светлый скат крыши</span>
+      <span class="key"><span class="swatch" style="background:#24282d"></span>пол в тени</span>
+      <span class="key"><span class="swatch" style="background:#6f746f"></span>стена</span>
+      <span class="key"><span class="swatch" style="background:#56514a"></span>треснувшая стена</span>
+      <span class="key"><span class="swatch" style="background:#443b34"></span>сломанная стена</span>
+      <span class="key"><span class="swatch" style="background:#332b25"></span>обломки</span>
+      <span class="key"><span class="swatch" style="background:#171514"></span>дыра</span>
+      <span class="key"><span class="swatch" style="background:#4d321b"></span>дверь/дерево</span>
+    </section>
+  </main>
+
+  <script>
+    const T = {
+      GRASS: 0,
+      FLOOR: 1,
+      WALL: 2,
+      CRACKED_WALL: 3,
+      BROKEN_WALL: 4,
+      RUBBLE: 5,
+      HOLE: 6,
+      DOOR: 7,
+      WOOD: 8,
+      DIRT: 9,
+    };
+
+    const COLORS = {
+      [T.GRASS]: "#46623c",
+      [T.FLOOR]: "#24282d",
+      [T.WALL]: "#6f746f",
+      [T.CRACKED_WALL]: "#56514a",
+      [T.BROKEN_WALL]: "#443b34",
+      [T.RUBBLE]: "#332b25",
+      [T.HOLE]: "#171514",
+      [T.DOOR]: "#4d321b",
+      [T.WOOD]: "#3f2a17",
+      [T.DIRT]: "#2f2a22",
+    };
+
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const seedInput = document.getElementById("seedInput");
+    const sizeSelect = document.getElementById("sizeSelect");
+    const blastInput = document.getElementById("blastInput");
+    const blastLabel = document.getElementById("blastLabel");
+    const generateBtn = document.getElementById("generateBtn");
+    const randomBtn = document.getElementById("randomBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const statusEl = document.getElementById("status");
+
+    const TILE_SIZE = 24;
+    const PADDING = 5;
+    const MIN_ROOM = 5;
+    const MAX_DEPTH = 4;
+
+    let rng = createRng("house-001");
+    let baseGrid = null;
+    let grid = null;
+    let roofData = null;
+    let rooms = [];
+    let blastCount = 0;
+    let lastDrawInfo = { startX: 0, startY: 0, mapW: 0, mapH: 0 };
+
+    function hashStringToSeed(text) {
+      let h = 2166136261;
+      for (let i = 0; i < text.length; i++) {
+        h ^= text.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return h >>> 0;
+    }
+
+    function createRng(seedText) {
+      let state = hashStringToSeed(String(seedText));
+      return function rand() {
+        state += 0x6D2B79F5;
+        let t = state;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function randInt(min, max) {
+      return Math.floor(rng() * (max - min + 1)) + min;
+    }
+
+    function choice(items) {
+      return items[Math.floor(rng() * items.length)];
+    }
+
+    function inBounds(anyGrid, x, y) {
+      return y >= 0 && y < anyGrid.length && x >= 0 && x < anyGrid[0].length;
+    }
+
+    function makeGrid(width, height, fill) {
+      return Array.from({ length: height }, () => Array.from({ length: width }, () => fill));
+    }
+
+    function cloneGrid(source) {
+      return source.map(row => row.slice());
+    }
+
+    function splitRect(rect, depth = 0) {
+      if (depth >= MAX_DEPTH) return [rect];
+
+      const canSplitV = rect.w >= MIN_ROOM * 2 + 2;
+      const canSplitH = rect.h >= MIN_ROOM * 2 + 2;
+      if (!canSplitV && !canSplitH) return [rect];
+
+      if (depth > 1 && rng() < 0.25) return [rect];
+
+      let splitVertical;
+      if (canSplitV && canSplitH) {
+        splitVertical = rect.w > rect.h ? rng() < 0.65 : rng() < 0.35;
+      } else {
+        splitVertical = canSplitV;
+      }
+
+      if (splitVertical) {
+        const split = randInt(rect.x + MIN_ROOM, rect.x + rect.w - MIN_ROOM - 1);
+        const left = { x: rect.x, y: rect.y, w: split - rect.x, h: rect.h };
+        const right = { x: split, y: rect.y, w: rect.x + rect.w - split, h: rect.h };
+        return [...splitRect(left, depth + 1), ...splitRect(right, depth + 1)];
+      } else {
+        const split = randInt(rect.y + MIN_ROOM, rect.y + rect.h - MIN_ROOM - 1);
+        const top = { x: rect.x, y: rect.y, w: rect.w, h: split - rect.y };
+        const bottom = { x: rect.x, y: split, w: rect.w, h: rect.y + rect.h - split };
+        return [...splitRect(top, depth + 1), ...splitRect(bottom, depth + 1)];
+      }
+    }
+
+    function carveRooms(targetGrid, roomList) {
+      for (const room of roomList) {
+        for (let y = room.y; y < room.y + room.h; y++) {
+          for (let x = room.x; x < room.x + room.w; x++) {
+            const isEdge = x === room.x || y === room.y || x === room.x + room.w - 1 || y === room.y + room.h - 1;
+            if (isEdge) {
+              if (targetGrid[y][x] !== T.DOOR) targetGrid[y][x] = T.WALL;
+            } else {
+              targetGrid[y][x] = T.FLOOR;
+            }
+          }
+        }
+      }
+    }
+
+    function addOuterIrregularity(targetGrid) {
+      const main = { x: PADDING, y: PADDING, w: targetGrid[0].length - PADDING * 2, h: targetGrid.length - PADDING * 2 };
+      const additions = randInt(1, 4);
+
+      for (let i = 0; i < additions; i++) {
+        const side = choice(["top", "right", "bottom", "left"]);
+        let add;
+        if (side === "top") {
+          const w = randInt(4, 7);
+          add = { x: randInt(main.x + 1, main.x + main.w - w - 1), y: main.y - randInt(2, 4), w, h: randInt(3, 5) };
+        } else if (side === "bottom") {
+          const w = randInt(4, 7);
+          const h = randInt(3, 5);
+          add = { x: randInt(main.x + 1, main.x + main.w - w - 1), y: main.y + main.h - 1, w, h };
+        } else if (side === "left") {
+          const h = randInt(4, 7);
+          add = { x: main.x - randInt(2, 4), y: randInt(main.y + 1, main.y + main.h - h - 1), w: randInt(3, 5), h };
+        } else {
+          const h = randInt(4, 7);
+          const w = randInt(3, 5);
+          add = { x: main.x + main.w - 1, y: randInt(main.y + 1, main.y + main.h - h - 1), w, h };
+        }
+
+        for (let y = add.y; y < add.y + add.h; y++) {
+          for (let x = add.x; x < add.x + add.w; x++) {
+            if (!inBounds(targetGrid, x, y)) continue;
+            const isEdge = x === add.x || y === add.y || x === add.x + add.w - 1 || y === add.y + add.h - 1;
+            targetGrid[y][x] = isEdge ? T.WALL : T.FLOOR;
+          }
+        }
+      }
+    }
+
+    function addDoorsBetweenRooms(targetGrid, roomList) {
+      for (let i = 0; i < roomList.length; i++) {
+        for (let j = i + 1; j < roomList.length; j++) {
+          const a = roomList[i];
+          const b = roomList[j];
+
+          if (a.x + a.w === b.x || b.x + b.w === a.x) {
+            const wallX = a.x + a.w === b.x ? b.x : a.x;
+            const y1 = Math.max(a.y + 1, b.y + 1);
+            const y2 = Math.min(a.y + a.h - 2, b.y + b.h - 2);
+            if (y2 >= y1 && rng() < 0.9) {
+              const y = randInt(y1, y2);
+              targetGrid[y][wallX] = T.DOOR;
+              if (inBounds(targetGrid, wallX - 1, y)) targetGrid[y][wallX - 1] = T.FLOOR;
+              if (inBounds(targetGrid, wallX + 1, y)) targetGrid[y][wallX + 1] = T.FLOOR;
+            }
+          }
+
+          if (a.y + a.h === b.y || b.y + b.h === a.y) {
+            const wallY = a.y + a.h === b.y ? b.y : a.y;
+            const x1 = Math.max(a.x + 1, b.x + 1);
+            const x2 = Math.min(a.x + a.w - 2, b.x + b.w - 2);
+            if (x2 >= x1 && rng() < 0.9) {
+              const x = randInt(x1, x2);
+              targetGrid[wallY][x] = T.DOOR;
+              if (inBounds(targetGrid, x, wallY - 1)) targetGrid[wallY - 1][x] = T.FLOOR;
+              if (inBounds(targetGrid, x, wallY + 1)) targetGrid[wallY + 1][x] = T.FLOOR;
+            }
+          }
+        }
+      }
+    }
+
+    function addEntrance(targetGrid) {
+      const candidates = [];
+      for (let y = 1; y < targetGrid.length - 1; y++) {
+        for (let x = 1; x < targetGrid[0].length - 1; x++) {
+          if (targetGrid[y][x] !== T.WALL) continue;
+          const floorNeighbors = countNeighbors(targetGrid, x, y, [T.FLOOR, T.DOOR]);
+          const grassNeighbors = countNeighbors(targetGrid, x, y, [T.GRASS, T.DIRT]);
+          if (floorNeighbors > 0 && grassNeighbors > 0) candidates.push({ x, y });
+        }
+      }
+
+      if (candidates.length) {
+        const door = choice(candidates);
+        targetGrid[door.y][door.x] = T.DOOR;
+      }
+    }
+
+    function countNeighbors(targetGrid, x, y, types) {
+      let count = 0;
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (inBounds(targetGrid, nx, ny) && types.includes(targetGrid[ny][nx])) count++;
+      }
+      return count;
+    }
+
+    function addFloorVariation(targetGrid) {
+      for (let y = 0; y < targetGrid.length; y++) {
+        for (let x = 0; x < targetGrid[0].length; x++) {
+          if (targetGrid[y][x] === T.FLOOR && rng() < 0.08) targetGrid[y][x] = T.DIRT;
+          if (targetGrid[y][x] === T.FLOOR && rng() < 0.04) targetGrid[y][x] = T.WOOD;
+        }
+      }
+    }
+
+    function isBuildingTile(tile) {
+      return tile !== T.GRASS;
+    }
+
+    function getBuildingBounds(targetGrid) {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+
+      for (let y = 0; y < targetGrid.length; y++) {
+        for (let x = 0; x < targetGrid[0].length; x++) {
+          if (!isBuildingTile(targetGrid[y][x])) continue;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        }
+      }
+
+      if (minX === Infinity) return { x: 0, y: 0, w: 0, h: 0 };
+      return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+    }
+
+    function chooseRoofOrientation(bounds) {
+      if (Math.abs(bounds.w - bounds.h) <= 3) return rng() < 0.5 ? "horizontal" : "vertical";
+      return bounds.w >= bounds.h ? "horizontal" : "vertical";
+    }
+
+    function createIntactRoofData(targetGrid) {
+      const bounds = getBuildingBounds(targetGrid);
+      const orientation = chooseRoofOrientation(bounds);
+      const mask = makeGrid(targetGrid[0].length, targetGrid.length, 0);
+
+      for (let y = 0; y < targetGrid.length; y++) {
+        for (let x = 0; x < targetGrid[0].length; x++) {
+          if (isBuildingTile(targetGrid[y][x])) mask[y][x] = 1;
+        }
+      }
+
+      return { mask, orientation, bounds };
+    }
+
+    function generateIntactBuilding(width, height) {
+      const gridW = width + PADDING * 2;
+      const gridH = height + PADDING * 2;
+      const newGrid = makeGrid(gridW, gridH, T.GRASS);
+      const baseRect = { x: PADDING, y: PADDING, w: width, h: height };
+      const newRooms = splitRect(baseRect);
+
+      carveRooms(newGrid, newRooms);
+      addOuterIrregularity(newGrid);
+      addDoorsBetweenRooms(newGrid, newRooms);
+      addEntrance(newGrid);
+      addFloorVariation(newGrid);
+
+      return { grid: newGrid, rooms: newRooms, roofData: createIntactRoofData(newGrid) };
+    }
+
+    function applyClickDamage(tileX, tileY, power) {
+      if (!grid || !roofData || !inBounds(grid, tileX, tileY)) return;
+      if (!isBuildingTile(grid[tileY][tileX]) && !roofData.mask[tileY][tileX]) return;
+
+      const radius = 2 + Math.round(power / 22);
+      const strength = 0.32 + power / 110;
+
+      applySingleBlast(grid, tileX, tileY, radius, strength);
+      erodeExposedEdgesLocal(grid, power, tileX, tileY, radius + 2);
+      scatterDebrisOutsideLocal(grid, power, tileX, tileY, radius + 2);
+      carveRoofOpening(roofData.mask, grid, tileX, tileY, Math.max(2, Math.round(radius * 1.15)));
+
+      for (let y = 0; y < grid.length; y++) {
+        for (let x = 0; x < grid[0].length; x++) {
+          if ([T.HOLE, T.RUBBLE, T.BROKEN_WALL].includes(grid[y][x])) roofData.mask[y][x] = 0;
+        }
+      }
+
+      smoothRoofMask(roofData.mask, grid);
+      blastCount++;
+      drawGrid(grid, roofData);
+      updateStatus();
+    }
+
+    function carveRoofOpening(mask, targetGrid, cx, cy, radius) {
+      for (let y = cy - radius - 1; y <= cy + radius + 1; y++) {
+        for (let x = cx - radius - 1; x <= cx + radius + 1; x++) {
+          if (!inBounds(targetGrid, x, y)) continue;
+          if (!mask[y][x]) continue;
+
+          const dx = x - cx;
+          const dy = y - cy;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const threshold = radius + (rng() - 0.5) * 0.9;
+          if (distance <= threshold) mask[y][x] = 0;
+        }
+      }
+    }
+
+    function smoothRoofMask(mask, targetGrid) {
+      for (let pass = 0; pass < 2; pass++) {
+        const copy = mask.map(row => row.slice());
+
+        for (let y = 1; y < mask.length - 1; y++) {
+          for (let x = 1; x < mask[0].length - 1; x++) {
+            if (!isBuildingTile(targetGrid[y][x])) continue;
+
+            let neighbors = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                if (mask[y + dy][x + dx]) neighbors++;
+              }
+            }
+
+            if (mask[y][x] && neighbors <= 2) copy[y][x] = 0;
+            if (!mask[y][x] && neighbors >= 7 && ![T.HOLE, T.RUBBLE, T.BROKEN_WALL].includes(targetGrid[y][x])) {
+              copy[y][x] = 1;
+            }
+          }
+        }
+
+        for (let y = 0; y < mask.length; y++) mask[y] = copy[y];
+      }
+    }
+
+    function applySingleBlast(targetGrid, cx, cy, radius, strength) {
+      for (let y = cy - radius - 2; y <= cy + radius + 2; y++) {
+        for (let x = cx - radius - 2; x <= cx + radius + 2; x++) {
+          if (!inBounds(targetGrid, x, y)) continue;
+
+          const dx = x - cx;
+          const dy = y - cy;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance > radius + rng() * 1.5) continue;
+
+          const falloff = Math.max(0, 1 - distance / radius);
+          const chance = falloff * strength;
+          const tile = targetGrid[y][x];
+
+          if (tile === T.WALL || tile === T.DOOR) {
+            if (rng() < chance * 0.48) targetGrid[y][x] = T.HOLE;
+            else if (rng() < chance * 0.82) targetGrid[y][x] = T.BROKEN_WALL;
+            else if (rng() < chance) targetGrid[y][x] = T.CRACKED_WALL;
+          } else if (tile === T.FLOOR || tile === T.DIRT || tile === T.WOOD) {
+            if (rng() < chance * 0.16) targetGrid[y][x] = T.HOLE;
+            else if (rng() < chance * 0.58) targetGrid[y][x] = T.RUBBLE;
+            else if (rng() < chance * 0.82) targetGrid[y][x] = T.DIRT;
+          } else if (tile === T.CRACKED_WALL) {
+            if (rng() < chance * 0.7) targetGrid[y][x] = T.BROKEN_WALL;
+          } else if (tile === T.BROKEN_WALL) {
+            if (rng() < chance * 0.5) targetGrid[y][x] = T.RUBBLE;
+          } else if (tile === T.GRASS && distance < radius * 0.6 && rng() < chance * 0.15) {
+            targetGrid[y][x] = T.DIRT;
+          }
+        }
+      }
+    }
+
+    function erodeExposedEdgesLocal(targetGrid, power, cx, cy, radius) {
+      const copy = targetGrid.map(row => row.slice());
+      const minX = Math.max(1, cx - radius);
+      const maxX = Math.min(targetGrid[0].length - 2, cx + radius);
+      const minY = Math.max(1, cy - radius);
+      const maxY = Math.min(targetGrid.length - 2, cy + radius);
+
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          const dx = x - cx;
+          const dy = y - cy;
+          if (Math.sqrt(dx * dx + dy * dy) > radius) continue;
+
+          const tile = targetGrid[y][x];
+          if (![T.WALL, T.CRACKED_WALL, T.BROKEN_WALL].includes(tile)) continue;
+
+          const holes = countNeighbors(targetGrid, x, y, [T.GRASS, T.HOLE, T.RUBBLE]);
+          if (holes >= 2 && rng() < power / 190) copy[y][x] = T.BROKEN_WALL;
+          if (holes >= 3 && rng() < power / 230) copy[y][x] = T.RUBBLE;
+        }
+      }
+
+      for (let y = 0; y < targetGrid.length; y++) targetGrid[y] = copy[y];
+    }
+
+    function scatterDebrisOutsideLocal(targetGrid, power, cx, cy, radius) {
+      const copy = targetGrid.map(row => row.slice());
+      const minX = Math.max(1, cx - radius);
+      const maxX = Math.min(targetGrid[0].length - 2, cx + radius);
+      const minY = Math.max(1, cy - radius);
+      const maxY = Math.min(targetGrid.length - 2, cy + radius);
+
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          const dx0 = x - cx;
+          const dy0 = y - cy;
+          if (Math.sqrt(dx0 * dx0 + dy0 * dy0) > radius) continue;
+          if (![T.BROKEN_WALL, T.RUBBLE, T.HOLE].includes(targetGrid[y][x])) continue;
+
+          const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
+          for (const [dx, dy] of dirs) {
+            const nx = x + dx;
+            const ny = y + dy;
+            if (!inBounds(targetGrid, nx, ny)) continue;
+            if (targetGrid[ny][nx] === T.GRASS && rng() < power / 280) {
+              copy[ny][nx] = rng() < 0.7 ? T.RUBBLE : T.DIRT;
+            }
+          }
+        }
+      }
+
+      for (let y = 0; y < targetGrid.length; y++) targetGrid[y] = copy[y];
+    }
+
+    function drawTile(x, y, tile, px, py) {
+      ctx.fillStyle = COLORS[tile];
+      ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+
+      if (tile === T.GRASS) drawGrassDetail(x, y, px, py);
+      if (tile === T.FLOOR) drawFloorDetail(px, py);
+      if (tile === T.WALL) drawWallDetail(px, py);
+      if (tile === T.CRACKED_WALL) drawCrackedWallDetail(px, py);
+      if (tile === T.BROKEN_WALL) drawBrokenWallDetail(px, py);
+      if (tile === T.RUBBLE) drawRubbleDetail(x, y, px, py);
+      if (tile === T.HOLE) drawHoleDetail(px, py);
+      if (tile === T.DOOR) drawDoorDetail(px, py);
+      if (tile === T.WOOD) drawWoodDetail(px, py);
+      if (tile === T.DIRT) drawDirtDetail(x, y, px, py);
+
+      ctx.strokeStyle = "rgba(0,0,0,0.10)";
+      ctx.strokeRect(px + 0.5, py + 0.5, TILE_SIZE - 1, TILE_SIZE - 1);
+    }
+
+    function drawRoofTile(x, y, tileBelow, px, py, currentRoofData) {
+      const { orientation, bounds } = currentRoofData;
+      let base;
+      let shade;
+      let ridge = false;
+
+      if (orientation === "horizontal") {
+        const mid = bounds.y + bounds.h / 2;
+        const northSide = y + 0.5 < mid;
+        base = northSide ? "#5e6871" : "#7a858e";
+        shade = northSide ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.14)";
+        ridge = Math.abs((y + 0.5) - mid) < 0.8;
+      } else {
+        const mid = bounds.x + bounds.w / 2;
+        const westSide = x + 0.5 < mid;
+        base = westSide ? "#5e6871" : "#7a858e";
+        shade = westSide ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.14)";
+        ridge = Math.abs((x + 0.5) - mid) < 0.8;
+      }
+
+      ctx.fillStyle = base;
+      ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+
+      ctx.fillStyle = shade;
+      ctx.fillRect(px + 3, py + 4, TILE_SIZE - 6, 3);
+
+      ctx.fillStyle = "rgba(0,0,0,0.14)";
+      ctx.fillRect(px + 3, py + 17, TILE_SIZE - 6, 3);
+
+      if (orientation === "horizontal") {
+        ctx.fillStyle = "rgba(0,0,0,0.08)";
+        ctx.fillRect(px + 10, py + 4, 2, 15);
+      } else {
+        ctx.fillStyle = "rgba(0,0,0,0.08)";
+        ctx.fillRect(px + 4, py + 10, 15, 2);
+      }
+
+      if (ridge) {
+        ctx.fillStyle = "rgba(255,255,255,0.18)";
+        if (orientation === "horizontal") ctx.fillRect(px + 2, py + 2, TILE_SIZE - 4, 2);
+        else ctx.fillRect(px + 2, py + 2, 2, TILE_SIZE - 4);
+      }
+
+      if (tileBelow === T.CRACKED_WALL) {
+        ctx.strokeStyle = "#3b322c";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(px + 7, py + 5);
+        ctx.lineTo(px + 12, py + 10);
+        ctx.lineTo(px + 10, py + 16);
+        ctx.lineTo(px + 16, py + 20);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+
+      ctx.strokeStyle = "rgba(0,0,0,0.10)";
+      ctx.strokeRect(px + 0.5, py + 0.5, TILE_SIZE - 1, TILE_SIZE - 1);
+    }
+
+    function drawGrassDetail(x, y, px, py) {
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      if ((x * 11 + y * 7) % 9 === 0) ctx.fillRect(px + 5, py + 7, 2, 8);
+      if ((x * 5 + y * 13) % 11 === 0) ctx.fillRect(px + 16, py + 12, 2, 6);
+    }
+
+    function drawFloorDetail(px, py) {
+      ctx.fillStyle = "rgba(0,0,0,0.22)";
+      ctx.fillRect(px + 2, py + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+      ctx.fillStyle = "rgba(255,255,255,0.035)";
+      ctx.fillRect(px + 2, py + 3, TILE_SIZE - 4, 1);
+      ctx.fillRect(px + 2, py + 11, TILE_SIZE - 4, 1);
+      ctx.fillStyle = "rgba(0,0,0,0.22)";
+      ctx.fillRect(px + 7, py + 2, 2, TILE_SIZE - 4);
+      ctx.fillRect(px + 16, py + 2, 2, TILE_SIZE - 4);
+    }
+
+    function drawWallDetail(px, py) {
+      ctx.fillStyle = "rgba(255,255,255,0.16)";
+      ctx.fillRect(px + 3, py + 3, 8, 4);
+      ctx.fillRect(px + 13, py + 9, 8, 4);
+      ctx.fillStyle = "rgba(0,0,0,0.30)";
+      ctx.fillRect(px + 3, py + 18, 18, 3);
+    }
+
+    function drawCrackedWallDetail(px, py) {
+      drawWallDetail(px, py);
+      ctx.strokeStyle = "#342d2a";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(px + 8, py + 4);
+      ctx.lineTo(px + 13, py + 9);
+      ctx.lineTo(px + 10, py + 15);
+      ctx.lineTo(px + 17, py + 21);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
+
+    function drawBrokenWallDetail(px, py) {
+      ctx.fillStyle = "rgba(0,0,0,0.34)";
+      ctx.fillRect(px + 3, py + 16, 18, 5);
+      ctx.fillStyle = "#6b665f";
+      ctx.fillRect(px + 3, py + 4, 6, 5);
+      ctx.fillRect(px + 10, py + 8, 5, 4);
+      ctx.fillRect(px + 16, py + 5, 5, 6);
+      ctx.fillStyle = "#29241f";
+      ctx.fillRect(px + 7, py + 14, 5, 4);
+      ctx.fillRect(px + 15, py + 15, 4, 5);
+    }
+
+    function drawRubbleDetail(x, y, px, py) {
+      ctx.fillStyle = "#211c18";
+      ctx.fillRect(px + 4, py + 15, 6, 5);
+      ctx.fillRect(px + 10, py + 9, 5, 5);
+      ctx.fillRect(px + 16, py + 16, 5, 4);
+      ctx.fillStyle = "#5f5045";
+      if ((x + y) % 2 === 0) ctx.fillRect(px + 6, py + 12, 3, 3);
+      ctx.fillRect(px + 13, py + 6, 3, 3);
+    }
+
+    function drawHoleDetail(px, py) {
+      ctx.fillStyle = "rgba(0,0,0,0.58)";
+      ctx.fillRect(px + 3, py + 4, TILE_SIZE - 6, TILE_SIZE - 8);
+      ctx.strokeStyle = "rgba(255,255,255,0.035)";
+      ctx.strokeRect(px + 5.5, py + 6.5, TILE_SIZE - 11, TILE_SIZE - 13);
+    }
+
+    function drawDoorDetail(px, py) {
+      ctx.fillStyle = COLORS[T.DOOR];
+      ctx.fillRect(px + 3, py + 3, TILE_SIZE - 6, TILE_SIZE - 6);
+      ctx.fillStyle = "rgba(0,0,0,0.34)";
+      ctx.fillRect(px + 5, py + 17, TILE_SIZE - 10, 3);
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      ctx.fillRect(px + 6, py + 5, 3, 13);
+    }
+
+    function drawWoodDetail(px, py) {
+      ctx.fillStyle = COLORS[T.WOOD];
+      ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.fillRect(px + 3, py + 7, TILE_SIZE - 6, 2);
+      ctx.fillRect(px + 3, py + 15, TILE_SIZE - 6, 2);
+      ctx.fillStyle = "rgba(255,255,255,0.055)";
+      ctx.fillRect(px + 5, py + 3, 2, 17);
+    }
+
+    function drawDirtDetail(x, y, px, py) {
+      ctx.fillStyle = "rgba(0,0,0,0.24)";
+      if ((x * 17 + y * 7) % 3 === 0) ctx.fillRect(px + 5, py + 6, 4, 3);
+      if ((x * 5 + y * 19) % 4 === 0) ctx.fillRect(px + 15, py + 15, 5, 3);
+      ctx.fillStyle = "rgba(255,255,255,0.04)";
+      ctx.fillRect(px + 9, py + 10, 3, 2);
+    }
+
+    function drawGrid(targetGrid, currentRoofData) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#2f3b2f";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const mapW = targetGrid[0].length * TILE_SIZE;
+      const mapH = targetGrid.length * TILE_SIZE;
+      const startX = Math.floor((canvas.width - mapW) / 2);
+      const startY = Math.floor((canvas.height - mapH) / 2);
+      lastDrawInfo = { startX, startY, mapW, mapH };
+
+      for (let y = 0; y < targetGrid.length; y++) {
+        for (let x = 0; x < targetGrid[0].length; x++) {
+          const px = startX + x * TILE_SIZE;
+          const py = startY + y * TILE_SIZE;
+          drawTile(x, y, targetGrid[y][x], px, py);
+        }
+      }
+
+      for (let y = 0; y < targetGrid.length; y++) {
+        for (let x = 0; x < targetGrid[0].length; x++) {
+          if (!currentRoofData.mask[y][x]) continue;
+          const px = startX + x * TILE_SIZE;
+          const py = startY + y * TILE_SIZE;
+          drawRoofTile(x, y, targetGrid[y][x], px, py, currentRoofData);
+        }
+      }
+    }
+
+    function parseSize() {
+      const [w, h] = sizeSelect.value.split("x").map(Number);
+      return { w, h };
+    }
+
+    function generate() {
+      rng = createRng(seedInput.value.trim() || "0");
+      const { w, h } = parseSize();
+      const generated = generateIntactBuilding(w, h);
+      baseGrid = cloneGrid(generated.grid);
+      grid = generated.grid;
+      roofData = generated.roofData;
+      rooms = generated.rooms;
+      blastCount = 0;
+      drawGrid(grid, roofData);
+      updateStatus();
+    }
+
+    function resetDamage() {
+      if (!baseGrid) return;
+      rng = createRng(seedInput.value.trim() || "0");
+      grid = cloneGrid(baseGrid);
+      roofData = createIntactRoofData(grid);
+      blastCount = 0;
+      drawGrid(grid, roofData);
+      updateStatus();
+    }
+
+    function randomSeed() {
+      seedInput.value = `house-${Math.floor(Math.random() * 1_000_000)}`;
+      generate();
+    }
+
+    function updateStatus() {
+      if (!grid || !roofData) return;
+      const { w, h } = parseSize();
+      const roofTiles = roofData.mask.flat().filter(Boolean).length;
+      statusEl.textContent = `Кликни по зданию, чтобы разрушить. Комнат: ${rooms.length}. Размер: ${w}×${h}. Ударов: ${blastCount}. Крыша: ${roofTiles} тайлов. Скат: ${roofData.orientation}. Seed: ${seedInput.value.trim() || "0"}`;
+    }
+
+    function canvasToTile(event) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const canvasX = (event.clientX - rect.left) * scaleX;
+      const canvasY = (event.clientY - rect.top) * scaleY;
+      const tileX = Math.floor((canvasX - lastDrawInfo.startX) / TILE_SIZE);
+      const tileY = Math.floor((canvasY - lastDrawInfo.startY) / TILE_SIZE);
+      return { tileX, tileY };
+    }
+
+    function runTests() {
+      rng = createRng("test");
+      const a = generateIntactBuilding(20, 14);
+      console.assert(a.grid.length === 24, "Grid height should include padding.");
+      console.assert(a.grid[0].length === 30, "Grid width should include padding.");
+      console.assert(a.roofData.mask.length === a.grid.length, "Roof mask height should match grid.");
+      console.assert(a.roofData.mask[0].length === a.grid[0].length, "Roof mask width should match grid.");
+      console.assert(["horizontal", "vertical"].includes(a.roofData.orientation), "Roof orientation should be valid.");
+      console.assert(a.rooms.length > 1, "BSP should produce more than one room for 20x14.");
+      console.assert(a.grid.flat().includes(T.DOOR), "Generated building should have at least one door.");
+      console.assert(a.roofData.mask.flat().filter(Boolean).length > 0, "Intact building should start with a roof.");
+
+      rng = createRng("damage-test");
+      const b = generateIntactBuilding(20, 14);
+      const beforeRoof = b.roofData.mask.flat().filter(Boolean).length;
+      applySingleBlast(b.grid, 12, 10, 4, 0.8);
+      carveRoofOpening(b.roofData.mask, b.grid, 12, 10, 4);
+      const afterRoof = b.roofData.mask.flat().filter(Boolean).length;
+      console.assert(afterRoof < beforeRoof, "A click-style blast should remove some roof tiles.");
+
+      rng = createRng("deterministic");
+      const c1 = JSON.stringify(generateIntactBuilding(16, 12));
+      rng = createRng("deterministic");
+      const c2 = JSON.stringify(generateIntactBuilding(16, 12));
+      console.assert(c1 === c2, "Same seed and params should produce same intact building including roof.");
+    }
+
+    canvas.addEventListener("click", (event) => {
+      const { tileX, tileY } = canvasToTile(event);
+      applyClickDamage(tileX, tileY, Number(blastInput.value));
+    });
+
+    blastInput.addEventListener("input", () => {
+      blastLabel.textContent = `${blastInput.value}%`;
+    });
+    sizeSelect.addEventListener("change", generate);
+    generateBtn.addEventListener("click", generate);
+    randomBtn.addEventListener("click", randomSeed);
+    resetBtn.addEventListener("click", resetDamage);
+    seedInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") generate();
+    });
+
+    runTests();
+    generate();
+  </script>
+</body>
+</html>
