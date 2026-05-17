@@ -200,7 +200,7 @@
     const MAX_ZOOM = 4;
     const CHUNK_SIZE = 16;
     const SECTOR_SIZE = 64;
-    const TREE_CELL_SIZE = 24;
+    const FOREST_PATCH_SIZE = 96;
     const BUILDING_PADDING = 4;
     const BUILDING_MIN_W = 12;
     const BUILDING_MAX_W = 20;
@@ -285,9 +285,9 @@
 
     const chunkCache = new Map();
     const buildingCache = new Map();
-    const treeCache = new Map();
+    const forestCache = new Map();
     const MAX_CACHED_CHUNKS = 256;
-    const MAX_CACHED_TREES = 512;
+    const MAX_CACHED_FOREST_PATCHES = 96;
 
     function hashStringToSeed(text) {
       let h = 2166136261;
@@ -797,22 +797,23 @@
       return building;
     }
 
-    function getTreeCellKey(cellX, cellY) {
-      return `${cellX},${cellY}`;
+    function getForestPatchKey(patchX, patchY) {
+      return `${patchX},${patchY}`;
     }
 
-    function chooseTreeSizeClass(rng, forest) {
+    function chooseTreeSizeClass(rng, forest, hint = null) {
+      if (hint) return hint;
       const roll = rng();
-      if (forest > 0.76 || roll > 0.88) return "large";
-      if (forest > 0.62 || roll > 0.45) return "medium";
+      if (forest > 0.82 || roll > 0.95) return "large";
+      if (forest > 0.66 || roll > 0.70) return "medium";
       return "small";
     }
 
     function treeSizeSpec(sizeClass, rng) {
       if (sizeClass === "large") {
         return {
-          baseRadius: randInt(rng, 5, 6),
-          circleRadii: [5, 6, 6],
+          baseRadius: randInt(rng, 4, 5),
+          circleRadii: [4, 5, 5],
           crownLift: randInt(rng, 4, 6),
           crownSpreadX: randInt(rng, 3, 5),
           crownSpreadY: randInt(rng, 1, 3),
@@ -820,19 +821,19 @@
       }
       if (sizeClass === "medium") {
         return {
-          baseRadius: randInt(rng, 4, 5),
-          circleRadii: [4, 4, 5],
+          baseRadius: randInt(rng, 2, 4),
+          circleRadii: [2, 3, 4],
           crownLift: randInt(rng, 3, 5),
           crownSpreadX: randInt(rng, 2, 4),
           crownSpreadY: randInt(rng, 1, 2),
         };
       }
       return {
-        baseRadius: randInt(rng, 2, 3),
-        circleRadii: [2, 3],
-        crownLift: randInt(rng, 2, 4),
-        crownSpreadX: randInt(rng, 1, 3),
-        crownSpreadY: randInt(rng, 0, 2),
+        baseRadius: randInt(rng, 1, 2),
+        circleRadii: [1, 2],
+        crownLift: randInt(rng, 1, 3),
+        crownSpreadX: randInt(rng, 0, 2),
+        crownSpreadY: randInt(rng, 0, 1),
       };
     }
 
@@ -905,31 +906,13 @@
       }
     }
 
-    function generateTreeForCell(cellX, cellY) {
-      const key = getTreeCellKey(cellX, cellY);
-      if (treeCache.has(key)) return treeCache.get(key);
+    function createTreeObject(trunkWorldX, trunkWorldY, seedText, forest, sizeHint = null) {
+      const rng = createRng(seedText);
+      if (getBuildingAt(trunkWorldX, trunkWorldY)) return null;
+      if (getBaseTile(trunkWorldX, trunkWorldY) !== T.GRASS) return null;
 
-      const rng = createRng(`${worldSeed}:tree:${cellX}:${cellY}`);
-      const cellWorldX = cellX * TREE_CELL_SIZE;
-      const cellWorldY = cellY * TREE_CELL_SIZE;
-      const forest = fractalNoise(cellWorldX + TREE_CELL_SIZE * 0.5, cellWorldY + TREE_CELL_SIZE * 0.5, 3000);
-      const spawnChance = clamp((forest - 0.44) * 1.25, 0.04, 0.42);
-
-      if (rng() > spawnChance) {
-        treeCache.set(key, null);
-        return null;
-      }
-
-      const sizeClass = chooseTreeSizeClass(rng, forest);
+      const sizeClass = chooseTreeSizeClass(rng, forest, sizeHint);
       const spec = treeSizeSpec(sizeClass, rng);
-      const trunkWorldX = cellWorldX + randInt(rng, 4, TREE_CELL_SIZE - 5);
-      const trunkWorldY = cellWorldY + randInt(rng, 5, TREE_CELL_SIZE - 4);
-
-      if (getBuildingAt(trunkWorldX, trunkWorldY)) {
-        treeCache.set(key, null);
-        return null;
-      }
-
       const circleRadii = spec.circleRadii;
       const circleCount = circleRadii.length;
       const circles = [];
@@ -941,7 +924,10 @@
         let cx;
         let cy;
 
-        if (i === 0) {
+        if (sizeClass === "small") {
+          cx = crownCenterX + randInt(rng, -1, 1);
+          cy = crownCenterY + randInt(rng, -1, 1);
+        } else if (i === 0) {
           cx = crownCenterX + randInt(rng, -spec.crownSpreadX, spec.crownSpreadX);
           cy = crownCenterY + randInt(rng, -spec.crownSpreadY - 2, -1);
         } else if (i === 1) {
@@ -974,10 +960,7 @@
       const trunkY = trunkWorldY - originY;
       const mask = createTreeMask(originX, originY, width, height, trunkWorldX, trunkWorldY, circles);
       softenTreeMask(mask);
-      const tree = {
-        key,
-        cellX,
-        cellY,
+      return {
         originX,
         originY,
         width,
@@ -988,15 +971,80 @@
         circles,
         sizeClass,
       };
+    }
 
-      treeCache.set(key, tree);
+    function generateForestPatch(patchX, patchY) {
+      const key = getForestPatchKey(patchX, patchY);
+      if (forestCache.has(key)) return forestCache.get(key);
 
-      if (treeCache.size > MAX_CACHED_TREES) {
-        const firstKey = treeCache.keys().next().value;
-        treeCache.delete(firstKey);
+      const rng = createRng(`${worldSeed}:forest:${patchX}:${patchY}`);
+      const patchWorldX = patchX * FOREST_PATCH_SIZE;
+      const patchWorldY = patchY * FOREST_PATCH_SIZE;
+      const patchCenterNoise = fractalNoise(patchWorldX + FOREST_PATCH_SIZE * 0.5, patchWorldY + FOREST_PATCH_SIZE * 0.5, 3100);
+      const forestStrength = clamp((patchCenterNoise - 0.28) * 1.55, 0, 1);
+      const trees = [];
+
+      let clusterCount = 0;
+      if (forestStrength > 0.2) clusterCount = 1;
+      if (forestStrength > 0.45) clusterCount = randInt(rng, 1, 2);
+      if (forestStrength > 0.68) clusterCount = randInt(rng, 2, 4);
+      if (forestStrength > 0.84) clusterCount = randInt(rng, 3, 5);
+
+      for (let clusterIndex = 0; clusterIndex < clusterCount; clusterIndex++) {
+        const clusterCenterX = patchWorldX + randInt(rng, 12, FOREST_PATCH_SIZE - 13);
+        const clusterCenterY = patchWorldY + randInt(rng, 12, FOREST_PATCH_SIZE - 13);
+        const clusterForest = clamp(forestStrength + random01(clusterCenterX, clusterCenterY, 3200) * 0.35, 0, 1);
+        const treeCount = randInt(rng, 4 + Math.round(clusterForest * 2), 10 + Math.round(clusterForest * 10));
+        const clusterRadius = randInt(rng, 8, 18) + Math.round(clusterForest * 10);
+
+        for (let treeIndex = 0; treeIndex < treeCount; treeIndex++) {
+          const angle = rng() * Math.PI * 2;
+          const radial = Math.pow(rng(), 0.58) * clusterRadius;
+          const trunkWorldX = Math.round(clusterCenterX + Math.cos(angle) * radial + randInt(rng, -2, 2));
+          const trunkWorldY = Math.round(clusterCenterY + Math.sin(angle) * radial + randInt(rng, -2, 2));
+
+          if (getBuildingAt(trunkWorldX, trunkWorldY)) continue;
+          if (getBaseTile(trunkWorldX, trunkWorldY) !== T.GRASS) continue;
+          if (rng() < 0.03 && clusterForest < 0.8) continue;
+
+          const sizeHint = clusterForest > 0.82
+            ? (rng() < 0.18 ? "large" : rng() < 0.62 ? "medium" : "small")
+            : clusterForest > 0.55
+              ? (rng() < 0.08 ? "large" : rng() < 0.56 ? "medium" : "small")
+              : (rng() < 0.03 ? "large" : rng() < 0.28 ? "medium" : "small");
+
+          const tree = createTreeObject(
+            trunkWorldX,
+            trunkWorldY,
+            `${worldSeed}:forest:${patchX}:${patchY}:${clusterIndex}:${treeIndex}`,
+            clusterForest,
+            sizeHint,
+          );
+
+          if (tree) trees.push(tree);
+        }
       }
 
-      return tree;
+      if (forestStrength > 0.3 && trees.length === 0) {
+        const fallbackX = patchWorldX + randInt(rng, 16, FOREST_PATCH_SIZE - 17);
+        const fallbackY = patchWorldY + randInt(rng, 16, FOREST_PATCH_SIZE - 17);
+        const fallbackTree = createTreeObject(
+          fallbackX,
+          fallbackY,
+          `${worldSeed}:forest:fallback:${patchX}:${patchY}`,
+          forestStrength,
+          forestStrength > 0.75 ? "medium" : "small",
+        );
+        if (fallbackTree) trees.push(fallbackTree);
+      }
+
+      forestCache.set(key, trees);
+      if (forestCache.size > MAX_CACHED_FOREST_PATCHES) {
+        const firstKey = forestCache.keys().next().value;
+        forestCache.delete(firstKey);
+      }
+
+      return trees;
     }
 
     function applySingleBlast(targetGrid, cx, cy, radius, strength) {
@@ -1437,15 +1485,17 @@
         }
       }
 
-      const minTreeCellX = floorDiv(startTileX, TREE_CELL_SIZE) - 1;
-      const minTreeCellY = floorDiv(startTileY, TREE_CELL_SIZE) - 1;
-      const maxTreeCellX = floorDiv(startTileX + tilesAcross, TREE_CELL_SIZE) + 1;
-      const maxTreeCellY = floorDiv(startTileY + tilesDown, TREE_CELL_SIZE) + 1;
+      const minForestPatchX = floorDiv(startTileX, FOREST_PATCH_SIZE) - 1;
+      const minForestPatchY = floorDiv(startTileY, FOREST_PATCH_SIZE) - 1;
+      const maxForestPatchX = floorDiv(startTileX + tilesAcross, FOREST_PATCH_SIZE) + 1;
+      const maxForestPatchY = floorDiv(startTileY + tilesDown, FOREST_PATCH_SIZE) + 1;
 
-      for (let cellY = minTreeCellY; cellY <= maxTreeCellY; cellY++) {
-        for (let cellX = minTreeCellX; cellX <= maxTreeCellX; cellX++) {
-          const tree = generateTreeForCell(cellX, cellY);
-          if (tree) drawTreeObject(tree, startTileX, startTileY, offsetX, offsetY, tileSize);
+      for (let patchY = minForestPatchY; patchY <= maxForestPatchY; patchY++) {
+        for (let patchX = minForestPatchX; patchX <= maxForestPatchX; patchX++) {
+          const trees = generateForestPatch(patchX, patchY);
+          for (const tree of trees) {
+            drawTreeObject(tree, startTileX, startTileY, offsetX, offsetY, tileSize);
+          }
         }
       }
 
@@ -1457,7 +1507,7 @@
       worldSeed = hashStringToSeed(seedInput.value.trim() || "0");
       chunkCache.clear();
       buildingCache.clear();
-      treeCache.clear();
+      forestCache.clear();
       drawWorld();
     }
 
@@ -1510,7 +1560,7 @@
       worldSeed = hashStringToSeed("test-seed");
       chunkCache.clear();
       buildingCache.clear();
-      treeCache.clear();
+      forestCache.clear();
 
       zoom = 1;
       console.assert(getTileSizeSafe() === BASE_TILE_SIZE, "Base tile size should match zoom 1.");
@@ -1541,7 +1591,7 @@
       cameraY = oldCameraY;
       chunkCache.clear();
       buildingCache.clear();
-      treeCache.clear();
+      forestCache.clear();
     }
 
     function getTileSizeSafe() {
