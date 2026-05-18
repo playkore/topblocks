@@ -15,54 +15,6 @@ function chooseDistrictType(seed: number, regionX: number, regionY: number, biom
   return "village";
 }
 
-function makeRoadPath(seed: number, startX: number, startY: number, endX: number, endY: number): Set<string> {
-  const points = new Set<string>();
-  let x = startX;
-  let y = startY;
-  points.add(`${x},${y}`);
-
-  const totalSteps = Math.max(Math.abs(endX - startX), Math.abs(endY - startY)) + 10;
-  for (let i = 0; i < totalSteps; i++) {
-    const dx = endX - x;
-    const dy = endY - y;
-    if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) break;
-
-    const stepX = Math.sign(dx);
-    const stepY = Math.sign(dy);
-    const wiggle = random01(seed, x, y, 6000 + i);
-
-    if (wiggle < 0.18) x += stepY === 0 ? stepX : 0;
-    else if (wiggle < 0.36) y += stepX === 0 ? stepY : 0;
-    else {
-      if (Math.abs(dx) > Math.abs(dy)) x += stepX;
-      else y += stepY;
-    }
-
-    if (wiggle > 0.82) {
-      if (Math.abs(dx) > Math.abs(dy)) y += stepY;
-      else x += stepX;
-    }
-
-    points.add(`${x},${y}`);
-    if (x === endX && y === endY) break;
-  }
-
-  points.add(`${endX},${endY}`);
-  return points;
-}
-
-function addRoadBand(roadTiles: Set<string>, path: Set<string>, thickness = 1): void {
-  for (const entry of path) {
-    const [sx, sy] = entry.split(",").map(Number);
-    for (let dy = -thickness; dy <= thickness; dy++) {
-      for (let dx = -thickness; dx <= thickness; dx++) {
-        if (Math.abs(dx) + Math.abs(dy) > thickness + 1) continue;
-        roadTiles.add(`${sx + dx},${sy + dy}`);
-      }
-    }
-  }
-}
-
 export function generateCityPlan(world: World, regionX: number, regionY: number): CityPlan | null {
   const key = `${regionX},${regionY}`;
   const cached = world.cityCache.get(key);
@@ -88,17 +40,6 @@ export function generateCityPlan(world: World, regionX: number, regionY: number)
   const centerTileY = Math.round(centerY + randInt(rng, -18, 18));
   const roadTiles = new Set<string>();
   const lots: CityLot[] = [];
-
-  const roadHalfWidth = districtType === "industrial" ? 2 : 1;
-  const northExitY = regionWorldY + 6;
-  const southExitY = regionWorldY + REGION_SIZE - 7;
-  const westExitX = regionWorldX + 6;
-  const eastExitX = regionWorldX + REGION_SIZE - 7;
-
-  addRoadBand(roadTiles, makeRoadPath(world.state.seed, centerTileX, centerTileY, centerTileX, northExitY), roadHalfWidth);
-  addRoadBand(roadTiles, makeRoadPath(world.state.seed, centerTileX, centerTileY, centerTileX, southExitY), roadHalfWidth);
-  addRoadBand(roadTiles, makeRoadPath(world.state.seed, centerTileX, centerTileY, westExitX, centerTileY), roadHalfWidth);
-  addRoadBand(roadTiles, makeRoadPath(world.state.seed, centerTileX, centerTileY, eastExitX, centerTileY), roadHalfWidth);
 
   const blockRadius = cityRadius - 6;
   const lotCount = districtType === "industrial" ? 8 : districtType === "ruins" ? 5 : 10;

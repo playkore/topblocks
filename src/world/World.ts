@@ -5,7 +5,6 @@ import { sampleTerrain } from "../generation/terrain";
 import { generateBuildingForSector, applyDamageToBuilding } from "../generation/buildings";
 import { generateForestPatch } from "../generation/forest";
 import { generateCityBuildings, generateCityPlan, REGION_SIZE } from "../generation/cities";
-import { getRoadTile } from "../generation/roads";
 
 export type FeatureSummary = {
   buildingCount: number;
@@ -102,10 +101,6 @@ export class World {
     return generateForestPatch(this, patchX, patchY);
   }
 
-  getRoadTile(worldX: number, worldY: number) {
-    return getRoadTile(this, worldX, worldY);
-  }
-
   getTile(worldX: number, worldY: number) {
     const building = this.getBuildingAt(worldX, worldY);
     if (building) {
@@ -114,9 +109,6 @@ export class World {
       const tile = building.grid[localY][localX];
       if (tile !== TILE.GRASS) return tile;
     }
-
-    const road = this.getRoadTile(worldX, worldY);
-    if (road) return road;
 
     return this.getTerrainTile(worldX, worldY);
   }

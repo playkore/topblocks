@@ -38,7 +38,6 @@ class LayerPool {
 export class PixiRenderer {
   private readonly app = new Application();
   private readonly terrain = new LayerPool();
-  private readonly roads = new LayerPool();
   private readonly buildings = new LayerPool();
   private readonly roofs = new LayerPool();
   private readonly trees = new LayerPool();
@@ -58,7 +57,6 @@ export class PixiRenderer {
     this.buildTextures();
     this.app.stage.addChild(
       this.terrain.container,
-      this.roads.container,
       this.buildings.container,
       this.roofs.container,
       this.trees.container,
@@ -81,7 +79,6 @@ export class PixiRenderer {
     const tileSize = camera.tileSize;
     const { startTileX, startTileY, offsetX, offsetY, tilesAcross, tilesDown } = camera.visibleBounds(this.width, this.height);
     const terrainItems: RenderItem[] = [];
-    const roadItems: RenderItem[] = [];
     const buildingItems: RenderItem[] = [];
     const roofItems: RenderItem[] = [];
     const treeItems: RenderItem[] = [];
@@ -107,12 +104,6 @@ export class PixiRenderer {
           }
         }
 
-        const roadTile = world.getRoadTile(worldX, worldY);
-        if (roadTile) {
-          roadItems.push(this.makeItem(roadTile, screenX, screenY, tileSize, worldX, worldY));
-          continue;
-        }
-
         const terrain = world.getTerrainTile(worldX, worldY);
         const biome = world.getBiomeAt(worldX, worldY);
         terrainItems.push(this.makeTerrainItem(terrain, biome, screenX, screenY, tileSize, worldX, worldY));
@@ -131,7 +122,6 @@ export class PixiRenderer {
     }
 
     this.syncLayer(this.terrain, terrainItems);
-    this.syncLayer(this.roads, roadItems);
     this.syncLayer(this.buildings, buildingItems);
     this.syncLayer(this.roofs, roofItems);
     this.syncLayer(this.trees, treeItems);

@@ -26,16 +26,10 @@ describe("world generation", () => {
     expect(after).toBeLessThanOrEqual(before);
   });
 
-  it("creates city roads when a city exists", () => {
+  it("creates a city when the origin region is queried", () => {
     const world = new World("city-road-seed");
-    let city = null;
-    for (let y = -2; y <= 2 && !city; y++) {
-      for (let x = -2; x <= 2 && !city; x++) {
-        city = generateCityPlan(world, x, y);
-      }
-    }
-
-    if (!city) return;
-    expect(city.roadTiles.size).toBeGreaterThan(0);
+    const city = generateCityPlan(world, 0, 0);
+    expect(city).not.toBeNull();
+    expect(city?.lots.length).toBeGreaterThan(0);
   });
 });

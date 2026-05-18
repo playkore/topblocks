@@ -1,7 +1,6 @@
 import { World } from "./world/World";
 import { Camera } from "./game/Camera";
 import { PixiRenderer } from "./render/PixiRenderer";
-import { clamp } from "./shared/math";
 
 const gameRoot = document.getElementById("game");
 const seedInput = document.getElementById("seedInput") as HTMLInputElement;
@@ -29,8 +28,8 @@ let pointerDownY = 0;
 function pointerPos(event: PointerEvent | WheelEvent): { x: number; y: number } {
   const rect = renderer.canvas.getBoundingClientRect();
   return {
-    x: (event.clientX - rect.left) * (renderer.canvas.width / rect.width),
-    y: (event.clientY - rect.top) * (renderer.canvas.height / rect.height),
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
   };
 }
 
@@ -146,8 +145,4 @@ async function canvasSetup(): Promise<void> {
   updateBlastLabel();
   redraw();
   window.addEventListener("resize", redraw);
-  requestAnimationFrame(function loop() {
-    redraw();
-    requestAnimationFrame(loop);
-  });
 }
