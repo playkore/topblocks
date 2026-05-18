@@ -32,4 +32,20 @@ describe("world generation", () => {
     expect(city).not.toBeNull();
     expect(city?.lots.length).toBeGreaterThan(0);
   });
+
+  it("evicts terrain samples without shifting the entire cache array", () => {
+    const world = new World("cache-eviction-seed") as any;
+    world.TERRAIN_SAMPLE_CACHE_LIMIT = 5;
+
+    for (let i = 0; i < 7; i++) {
+      world.getTerrainSample(i, 0);
+    }
+
+    expect(world.terrainSampleCache.size).toBe(5);
+    expect(world.terrainSampleCacheCursor).toBe(2);
+    expect(world.terrainSampleCache.has("0,0")).toBe(false);
+    expect(world.terrainSampleCache.has("1,0")).toBe(false);
+    expect(world.terrainSampleCache.has("2,0")).toBe(true);
+    expect(world.terrainSampleCacheKeys.slice(0, 2)).toEqual(["0,0", "1,0"]);
+  });
 });

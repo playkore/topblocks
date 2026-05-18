@@ -22,6 +22,7 @@ export class World {
   readonly cityCache = new Map<string, CityPlan | null>();
   private readonly terrainSampleCache = new Map<string, TerrainSample>();
   private readonly terrainSampleCacheKeys: string[] = [];
+  private terrainSampleCacheCursor = 0;
   private readonly TERRAIN_SAMPLE_CACHE_LIMIT = 80_000;
   private cityBuildingCache = new Map<string, BuildingObject[]>();
 
@@ -47,6 +48,7 @@ export class World {
     this.cityBuildingCache.clear();
     this.terrainSampleCache.clear();
     this.terrainSampleCacheKeys.length = 0;
+    this.terrainSampleCacheCursor = 0;
   }
 
   getBiomeAt(worldX: number, worldY: number) {
@@ -66,11 +68,16 @@ export class World {
     this.terrainSampleCache.set(key, sample);
     this.terrainSampleCacheKeys.push(key);
 
-    if (this.terrainSampleCacheKeys.length > this.TERRAIN_SAMPLE_CACHE_LIMIT) {
+    if (this.terrainSampleCacheKeys.length - this.terrainSampleCacheCursor > this.TERRAIN_SAMPLE_CACHE_LIMIT) {
       const deleteCount = Math.floor(this.TERRAIN_SAMPLE_CACHE_LIMIT * 0.2);
       for (let i = 0; i < deleteCount; i++) {
-        const oldKey = this.terrainSampleCacheKeys.shift();
+        const oldKey = this.terrainSampleCacheKeys[this.terrainSampleCacheCursor++];
         if (oldKey) this.terrainSampleCache.delete(oldKey);
+      }
+
+      if (this.terrainSampleCacheCursor > this.TERRAIN_SAMPLE_CACHE_LIMIT) {
+        this.terrainSampleCacheKeys.splice(0, this.terrainSampleCacheCursor);
+        this.terrainSampleCacheCursor = 0;
       }
     }
 

@@ -25,8 +25,7 @@ let lastPointerY = 0;
 let pointerDownX = 0;
 let pointerDownY = 0;
 let redrawQueued = false;
-let statusDirty = true;
-let lastStatusUpdateAt = 0;
+let statusNeedsRefresh = true;
 
 function pointerPos(event: PointerEvent | WheelEvent): { x: number; y: number } {
   const rect = renderer.canvas.getBoundingClientRect();
@@ -44,17 +43,15 @@ function screenToWorldTile(event: PointerEvent | WheelEvent) {
 function renderNow(): void {
   renderer.render(world, camera);
 
-  const now = performance.now();
-  if (statusDirty || now - lastStatusUpdateAt > 250) {
+  if (statusNeedsRefresh) {
     const summary = world.getFeatureSummary();
     statusEl.textContent = `seed ${world.state.seedText} | zoom ${camera.zoom.toFixed(2)} | buildings ${summary.buildingCount} | cities ${summary.cityCount} | forest patches ${summary.treePatchCount}`;
-    statusDirty = false;
-    lastStatusUpdateAt = now;
+    statusNeedsRefresh = false;
   }
 }
 
 function requestRedraw(updateStatus = false): void {
-  if (updateStatus) statusDirty = true;
+  if (updateStatus) statusNeedsRefresh = true;
   if (redrawQueued) return;
 
   redrawQueued = true;
