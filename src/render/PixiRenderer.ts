@@ -238,12 +238,12 @@ export class PixiRenderer {
       ctx.fillStyle = "rgba(255,255,255,0.08)";
       ctx.fillRect(6, 3, 2, 9);
     });
-    this.textures.roof = this.makeTexture(size, size, ctx => {
-      ctx.fillStyle = "#6d7883";
-      ctx.fillRect(0, 0, size, size);
-      ctx.fillStyle = "rgba(255,255,255,0.12)";
-      ctx.fillRect(2, 3, 12, 2);
-    });
+    this.textures.roofDarkHorizontal = this.makeRoofTexture(size, "horizontal", "dark");
+    this.textures.roofLightHorizontal = this.makeRoofTexture(size, "horizontal", "light");
+    this.textures.roofRidgeHorizontal = this.makeRoofTexture(size, "horizontal", "ridge");
+    this.textures.roofDarkVertical = this.makeRoofTexture(size, "vertical", "dark");
+    this.textures.roofLightVertical = this.makeRoofTexture(size, "vertical", "light");
+    this.textures.roofRidgeVertical = this.makeRoofTexture(size, "vertical", "ridge");
   }
 
   private makeTexture(width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void): Texture {
@@ -328,17 +328,15 @@ export class PixiRenderer {
     const localX = worldX - building.originX;
     const localY = worldY - building.originY;
     const { orientation, bounds } = building;
-    let alpha = 1;
+    const ridge = orientation === "horizontal"
+      ? Math.abs((localY + 0.5) - (bounds.y + bounds.h / 2)) < 0.8
+      : Math.abs((localX + 0.5) - (bounds.x + bounds.w / 2)) < 0.8;
+    const firstSide = orientation === "horizontal"
+      ? localY + 0.5 < bounds.y + bounds.h / 2
+      : localX + 0.5 < bounds.x + bounds.w / 2;
 
-    if (orientation === "horizontal") {
-      const mid = bounds.y + bounds.h / 2;
-      alpha = Math.abs((localY + 0.5) - mid) < 0.8 ? 0.95 : localY + 0.5 < mid ? 0.86 : 0.98;
-    } else {
-      const mid = bounds.x + bounds.w / 2;
-      alpha = Math.abs((localX + 0.5) - mid) < 0.8 ? 0.95 : localX + 0.5 < mid ? 0.86 : 0.98;
-    }
-
-    return { x, y, width: size, height: size, texture: this.textures.roof, alpha };
+    const texture = this.getRoofTexture(String(orientation), ridge ? "ridge" : firstSide ? "dark" : "light");
+    return { x, y, width: size, height: size, texture };
   }
 
   private appendTreeItems(target: RenderItem[], tree: TreeObject, startTileX: number, startTileY: number, offsetX: number, offsetY: number, tileSize: number): void {
@@ -372,5 +370,49 @@ export class PixiRenderer {
     for (let i = items.length; i < pool.sprites.length; i++) {
       pool.sprites[i].visible = false;
     }
+  }
+
+  private makeRoofTexture(size: number, orientation: "horizontal" | "vertical", tone: "dark" | "light" | "ridge"): Texture {
+    return this.makeTexture(size, size, ctx => {
+      const base = tone === "dark" ? "#5e6871" : "#7a858e";
+      ctx.fillStyle = base;
+      ctx.fillRect(0, 0, size, size);
+
+      if (orientation === "horizontal") {
+        if (tone === "ridge") {
+          ctx.fillStyle = "rgba(255,255,255,0.18)";
+          ctx.fillRect(2, 2, size - 4, 2);
+        } else if (tone === "dark") {
+          ctx.fillStyle = "rgba(0,0,0,0.10)";
+          ctx.fillRect(0, size - 4, size, 4);
+        } else {
+          ctx.fillStyle = "rgba(255,255,255,0.10)";
+          ctx.fillRect(0, 0, size, 4);
+        }
+      } else {
+        if (tone === "ridge") {
+          ctx.fillStyle = "rgba(255,255,255,0.18)";
+          ctx.fillRect(2, 2, 2, size - 4);
+        } else if (tone === "dark") {
+          ctx.fillStyle = "rgba(0,0,0,0.10)";
+          ctx.fillRect(size - 4, 0, 4, size);
+        } else {
+          ctx.fillStyle = "rgba(255,255,255,0.10)";
+          ctx.fillRect(0, 0, 4, size);
+        }
+      }
+
+      ctx.strokeStyle = "rgba(0,0,0,0.10)";
+      ctx.strokeRect(0.5, 0.5, size - 1, size - 1);
+    });
+  }
+
+  private getRoofTexture(orientation: string, tone: "dark" | "light" | "ridge"): Texture {
+    if (orientation === "horizontal") {
+      if (tone === "ridge") return this.textures.roofRidgeHorizontal;
+      return tone === "dark" ? this.textures.roofDarkHorizontal : this.textures.roofLightHorizontal;
+    }
+    if (tone === "ridge") return this.textures.roofRidgeVertical;
+    return tone === "dark" ? this.textures.roofDarkVertical : this.textures.roofLightVertical;
   }
 }
