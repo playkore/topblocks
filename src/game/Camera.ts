@@ -1,7 +1,7 @@
 import { clamp, mod } from "../shared/math";
 
 export const VIEW_BASE_TILE_SIZE = 16;
-export const MIN_ZOOM = 0.5;
+export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 4;
 
 export class Camera {
