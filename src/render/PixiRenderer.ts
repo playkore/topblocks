@@ -78,6 +78,7 @@ export class PixiRenderer {
   render(world: World, camera: Camera): void {
     const tileSize = camera.tileSize;
     const { startTileX, startTileY, offsetX, offsetY, tilesAcross, tilesDown } = camera.visibleBounds(this.width, this.height);
+
     const terrainItems: RenderItem[] = [];
     const buildingItems: RenderItem[] = [];
     const roofItems: RenderItem[] = [];
@@ -104,9 +105,8 @@ export class PixiRenderer {
           }
         }
 
-        const terrain = world.getTerrainTile(worldX, worldY);
-        const biome = world.getBiomeAt(worldX, worldY);
-        terrainItems.push(this.makeTerrainItem(terrain, biome, screenX, screenY, tileSize, worldX, worldY));
+        const terrain = world.getTerrainSample(worldX, worldY);
+        terrainItems.push(this.makeTerrainItem(terrain.baseTile, terrain.biomeId, screenX, screenY, tileSize, worldX, worldY));
       }
     }
 
@@ -117,7 +117,9 @@ export class PixiRenderer {
     for (let patchY = minForestPatchY; patchY <= maxForestPatchY; patchY++) {
       for (let patchX = minForestPatchX; patchX <= maxForestPatchX; patchX++) {
         const trees = world.getTreesForPatch(patchX, patchY);
-        for (const tree of trees) this.appendTreeItems(treeItems, tree, startTileX, startTileY, offsetX, offsetY, tileSize);
+        for (const tree of trees) {
+          this.appendTreeItems(treeItems, tree, startTileX, startTileY, offsetX, offsetY, tileSize);
+        }
       }
     }
 
@@ -339,13 +341,26 @@ export class PixiRenderer {
     return { x, y, width: size, height: size, texture };
   }
 
-  private appendTreeItems(target: RenderItem[], tree: TreeObject, startTileX: number, startTileY: number, offsetX: number, offsetY: number, tileSize: number): void {
+  private appendTreeItems(
+    target: RenderItem[],
+    tree: TreeObject,
+    startTileX: number,
+    startTileY: number,
+    offsetX: number,
+    offsetY: number,
+    tileSize: number,
+  ): void {
+    const endTileX = startTileX + Math.ceil(this.width / tileSize) + 2;
+    const endTileY = startTileY + Math.ceil(this.height / tileSize) + 2;
+
     for (let y = 0; y < tree.height; y++) {
       for (let x = 0; x < tree.width; x++) {
         const cell = tree.mask[y][x];
         if (!cell) continue;
         const worldX = tree.originX + x;
         const worldY = tree.originY + y;
+        if (worldX < startTileX - 1 || worldX > endTileX) continue;
+        if (worldY < startTileY - 1 || worldY > endTileY) continue;
         const screenX = offsetX + (worldX - startTileX) * tileSize;
         const screenY = offsetY + (worldY - startTileY) * tileSize;
         target.push(this.makeItem(cell === 2 ? TILE.TREE_TRUNK : TILE.TREE_LEAF, screenX, screenY, tileSize, worldX, worldY));

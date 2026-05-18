@@ -24,6 +24,9 @@ let lastPointerX = 0;
 let lastPointerY = 0;
 let pointerDownX = 0;
 let pointerDownY = 0;
+let redrawQueued = false;
+let statusDirty = true;
+let lastStatusUpdateAt = 0;
 
 function pointerPos(event: PointerEvent | WheelEvent): { x: number; y: number } {
   const rect = renderer.canvas.getBoundingClientRect();
@@ -38,27 +41,44 @@ function screenToWorldTile(event: PointerEvent | WheelEvent) {
   return camera.screenToTile(pointer.x, pointer.y);
 }
 
-function redraw(): void {
+function renderNow(): void {
   renderer.render(world, camera);
-  const summary = world.getFeatureSummary();
-  statusEl.textContent = `seed ${world.state.seedText} | zoom ${camera.zoom.toFixed(2)} | buildings ${summary.buildingCount} | cities ${summary.cityCount} | forest patches ${summary.treePatchCount}`;
+
+  const now = performance.now();
+  if (statusDirty || now - lastStatusUpdateAt > 250) {
+    const summary = world.getFeatureSummary();
+    statusEl.textContent = `seed ${world.state.seedText} | zoom ${camera.zoom.toFixed(2)} | buildings ${summary.buildingCount} | cities ${summary.cityCount} | forest patches ${summary.treePatchCount}`;
+    statusDirty = false;
+    lastStatusUpdateAt = now;
+  }
+}
+
+function requestRedraw(updateStatus = false): void {
+  if (updateStatus) statusDirty = true;
+  if (redrawQueued) return;
+
+  redrawQueued = true;
+  requestAnimationFrame(() => {
+    redrawQueued = false;
+    renderNow();
+  });
 }
 
 function applySeed(): void {
   world.setSeed(seedInput.value.trim() || "0");
-  redraw();
+  requestRedraw(true);
 }
 
 function centerCamera(): void {
   camera.zoom = 1;
   camera.centerOnTile(0, 0, renderer.width, renderer.height);
-  redraw();
+  requestRedraw(true);
 }
 
 function tryDamageAtPointer(event: PointerEvent): void {
   const { tileX, tileY } = screenToWorldTile(event);
   world.applyDamageAt(tileX, tileY, Number(blastInput.value));
-  redraw();
+  requestRedraw(true);
 }
 
 function updateBlastLabel(): void {
@@ -99,7 +119,7 @@ async function canvasSetup(): Promise<void> {
 
     if (isDragging) {
       camera.panBy(-dx, -dy);
-      redraw();
+      requestRedraw();
     }
 
     if (Math.hypot(pointer.x - pointerDownX, pointer.y - pointerDownY) > 4) pointerMoved = true;
@@ -128,7 +148,7 @@ async function canvasSetup(): Promise<void> {
     const pointer = pointerPos(event);
     const nextZoom = event.deltaY < 0 ? camera.zoom * 1.15 : camera.zoom / 1.15;
     camera.setZoomAround(pointer.x, pointer.y, nextZoom);
-    redraw();
+    requestRedraw(true);
   }, { passive: false });
 
   blastInput.addEventListener("input", updateBlastLabel);
@@ -143,6 +163,6 @@ async function canvasSetup(): Promise<void> {
   });
 
   updateBlastLabel();
-  redraw();
-  window.addEventListener("resize", redraw);
+  requestRedraw(true);
+  window.addEventListener("resize", () => requestRedraw(true));
 }

@@ -1,7 +1,7 @@
 import { BIOME, TILE, type BuildingObject, type CityPlan, type TreeObject, type WorldState } from "./types";
 import { floorDiv } from "../shared/math";
 import { hashStringToSeed, random01 } from "../generation/rng";
-import { sampleTerrain } from "../generation/terrain";
+import { sampleTerrain, type TerrainSample } from "../generation/terrain";
 import { generateBuildingForSector, applyDamageToBuilding } from "../generation/buildings";
 import { generateForestPatch } from "../generation/forest";
 import { generateCityBuildings, generateCityPlan, REGION_SIZE } from "../generation/cities";
@@ -20,6 +20,9 @@ export class World {
   readonly buildingCache = new Map<string, BuildingObject | null>();
   readonly forestCache = new Map<string, TreeObject[]>();
   readonly cityCache = new Map<string, CityPlan | null>();
+  private readonly terrainSampleCache = new Map<string, TerrainSample>();
+  private readonly terrainSampleCacheKeys: string[] = [];
+  private readonly TERRAIN_SAMPLE_CACHE_LIMIT = 80_000;
   private cityBuildingCache = new Map<string, BuildingObject[]>();
 
   constructor(seedText: string) {
@@ -42,14 +45,36 @@ export class World {
     this.forestCache.clear();
     this.cityCache.clear();
     this.cityBuildingCache.clear();
+    this.terrainSampleCache.clear();
+    this.terrainSampleCacheKeys.length = 0;
   }
 
   getBiomeAt(worldX: number, worldY: number) {
-    return sampleTerrain(this.state.seed, worldX, worldY).biomeId;
+    return this.getTerrainSample(worldX, worldY).biomeId;
   }
 
   getTerrainTile(worldX: number, worldY: number) {
-    return sampleTerrain(this.state.seed, worldX, worldY).baseTile;
+    return this.getTerrainSample(worldX, worldY).baseTile;
+  }
+
+  getTerrainSample(worldX: number, worldY: number): TerrainSample {
+    const key = `${worldX},${worldY}`;
+    const cached = this.terrainSampleCache.get(key);
+    if (cached) return cached;
+
+    const sample = sampleTerrain(this.state.seed, worldX, worldY);
+    this.terrainSampleCache.set(key, sample);
+    this.terrainSampleCacheKeys.push(key);
+
+    if (this.terrainSampleCacheKeys.length > this.TERRAIN_SAMPLE_CACHE_LIMIT) {
+      const deleteCount = Math.floor(this.TERRAIN_SAMPLE_CACHE_LIMIT * 0.2);
+      for (let i = 0; i < deleteCount; i++) {
+        const oldKey = this.terrainSampleCacheKeys.shift();
+        if (oldKey) this.terrainSampleCache.delete(oldKey);
+      }
+    }
+
+    return sample;
   }
 
   getTerrainScoreForSector(sectorX: number, sectorY: number): number {
@@ -110,7 +135,7 @@ export class World {
       if (tile !== TILE.GRASS) return tile;
     }
 
-    return this.getTerrainTile(worldX, worldY);
+    return this.getTerrainSample(worldX, worldY).baseTile;
   }
 
   applyDamageAt(worldX: number, worldY: number, power: number): boolean {
