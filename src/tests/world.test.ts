@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { World } from "../world/World";
 import { TILE } from "../world/types";
 import { generateCityPlan } from "../generation/cities";
@@ -31,6 +31,44 @@ describe("world generation", () => {
     const city = generateCityPlan(world, 0, 0);
     expect(city).not.toBeNull();
     expect(city?.lots.length).toBeGreaterThan(0);
+  });
+
+  it("exposes cache-only peek methods before warmup", () => {
+    const world = new World("peek-seed");
+    expect(world.peekTerrainSample(0, 0)).toBeNull();
+    expect(world.peekBuildingAt(64, 64)).toBeNull();
+    expect(world.peekTreesForPatch(0, 0)).toBeNull();
+  });
+
+  it("warms visible content without rendering it", () => {
+    const world = new World("warmup-seed");
+    expect(world.warmVisibleArea(0, 0, 1, 1, 10)).toBe(true);
+    expect(world.peekTerrainSample(0, 0)).not.toBeNull();
+  });
+
+  it("reports incomplete warmup when the budget is exhausted", () => {
+    const world = new World("warmup-budget-seed");
+    const nowSpy = vi.spyOn(performance, "now");
+    nowSpy.mockReturnValueOnce(0);
+    nowSpy.mockReturnValueOnce(0);
+    nowSpy.mockReturnValue(10);
+
+    expect(world.warmVisibleArea(0, 0, 200, 200, 1)).toBe(false);
+
+    nowSpy.mockRestore();
+  });
+
+  it("skips terrain warmup when the visible area would overflow the cache", () => {
+    const world = new World("warmup-skip-terrain-seed");
+    const nowSpy = vi.spyOn(performance, "now");
+    nowSpy.mockReturnValueOnce(0);
+    nowSpy.mockReturnValueOnce(0);
+    nowSpy.mockReturnValue(2);
+
+    expect(world.warmVisibleArea(0, 0, 1000, 1000, 1)).toBe(false);
+    expect((world as any).warmup.terrainCursor).toBe(1_000_000);
+
+    nowSpy.mockRestore();
   });
 
   it("evicts terrain samples without shifting the entire cache array", () => {

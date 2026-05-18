@@ -44,10 +44,16 @@ export function fractalNoise(seed: number, x: number, y: number, salt: number): 
   return total / max;
 }
 
-export function getBiomeAt(seed: number, worldX: number, worldY: number): BiomeId {
+function sampleTerrainFields(seed: number, worldX: number, worldY: number) {
   const height = fractalNoise(seed, worldX, worldY, 2000);
   const moisture = fractalNoise(seed, worldX, worldY, 1000);
   const townBias = fractalNoise(seed, worldX, worldY, 5000);
+
+  return { height, moisture, townBias };
+}
+
+export function getBiomeAt(seed: number, worldX: number, worldY: number): BiomeId {
+  const { height, moisture, townBias } = sampleTerrainFields(seed, worldX, worldY);
 
   if (height > 0.76) return BIOME.ROCKY;
   if (moisture > 0.72 && height < 0.46) return BIOME.SWAMP;
@@ -57,10 +63,14 @@ export function getBiomeAt(seed: number, worldX: number, worldY: number): BiomeI
 }
 
 export function sampleTerrain(seed: number, worldX: number, worldY: number): TerrainSample {
-  const moisture = fractalNoise(seed, worldX, worldY, 1000);
-  const height = fractalNoise(seed, worldX, worldY, 2000);
+  const { height, moisture, townBias } = sampleTerrainFields(seed, worldX, worldY);
   const temperature = clamp(1 - Math.abs(worldY % 512) / 512, 0, 1);
-  const biomeId = getBiomeAt(seed, worldX, worldY);
+  let biomeId: BiomeId;
+  if (height > 0.76) biomeId = BIOME.ROCKY;
+  else if (moisture > 0.72 && height < 0.46) biomeId = BIOME.SWAMP;
+  else if (townBias > 0.69 && moisture > 0.44 && height > 0.35) biomeId = BIOME.TOWN;
+  else if (moisture > 0.55) biomeId = BIOME.FOREST;
+  else biomeId = BIOME.MEADOW;
 
   let baseTile: TileId = TILE.GRASS;
   if (height > 0.82) baseTile = TILE.ROCK;

@@ -41,7 +41,13 @@ function screenToWorldTile(event: PointerEvent | WheelEvent) {
 }
 
 function renderNow(): void {
+  const { startTileX, startTileY, tilesAcross, tilesDown } = camera.visibleBounds(renderer.width, renderer.height);
+  const warmupComplete = world.warmVisibleArea(startTileX, startTileY, tilesAcross, tilesDown, 4);
   renderer.render(world, camera);
+
+  if (!warmupComplete) {
+    requestRedraw();
+  }
 
   if (statusNeedsRefresh) {
     const summary = world.getFeatureSummary();

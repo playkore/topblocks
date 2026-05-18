@@ -1,7 +1,7 @@
 import { Application, Container, Sprite, Texture } from "pixi.js";
 import { BIOME, TILE, type BiomeId, type TreeObject } from "../world/types";
 import type { World } from "../world/World";
-import type { Camera } from "../game/Camera";
+import { VIEW_BASE_TILE_SIZE, type Camera } from "../game/Camera";
 
 type RenderItem = {
   x: number;
@@ -78,6 +78,7 @@ export class PixiRenderer {
   render(world: World, camera: Camera): void {
     const tileSize = camera.tileSize;
     const { startTileX, startTileY, offsetX, offsetY, tilesAcross, tilesDown } = camera.visibleBounds(this.width, this.height);
+    const terrainStep = this.getTerrainStep(tileSize);
 
     const terrainItems: RenderItem[] = [];
     const buildingItems: RenderItem[] = [];
@@ -90,7 +91,7 @@ export class PixiRenderer {
         const worldY = startTileY + y;
         const screenX = offsetX + x * tileSize;
         const screenY = offsetY + y * tileSize;
-        const building = world.getBuildingAt(worldX, worldY);
+        const building = world.peekBuildingAt(worldX, worldY);
 
         if (building) {
           const localX = worldX - building.originX;
@@ -104,9 +105,25 @@ export class PixiRenderer {
             continue;
           }
         }
+      }
+    }
 
+    for (let y = 0; y < tilesDown; y += terrainStep) {
+      for (let x = 0; x < tilesAcross; x += terrainStep) {
+        const worldX = startTileX + x;
+        const worldY = startTileY + y;
+        const screenX = offsetX + x * tileSize;
+        const screenY = offsetY + y * tileSize;
         const terrain = world.getTerrainSample(worldX, worldY);
-        terrainItems.push(this.makeTerrainItem(terrain.baseTile, terrain.biomeId, screenX, screenY, tileSize, worldX, worldY));
+        terrainItems.push(this.makeTerrainItem(
+          terrain.baseTile,
+          terrain.biomeId,
+          screenX,
+          screenY,
+          tileSize * terrainStep,
+          worldX,
+          worldY,
+        ));
       }
     }
 
@@ -116,7 +133,8 @@ export class PixiRenderer {
     const maxForestPatchY = Math.floor((startTileY + tilesDown) / 96) + 1;
     for (let patchY = minForestPatchY; patchY <= maxForestPatchY; patchY++) {
       for (let patchX = minForestPatchX; patchX <= maxForestPatchX; patchX++) {
-        const trees = world.getTreesForPatch(patchX, patchY);
+        const trees = world.peekTreesForPatch(patchX, patchY);
+        if (!trees) continue;
         for (const tree of trees) {
           this.appendTreeItems(treeItems, tree, startTileX, startTileY, offsetX, offsetY, tileSize);
         }
@@ -127,6 +145,12 @@ export class PixiRenderer {
     this.syncLayer(this.buildings, buildingItems);
     this.syncLayer(this.roofs, roofItems);
     this.syncLayer(this.trees, treeItems);
+  }
+
+  private getTerrainStep(tileSize: number): number {
+    if (tileSize < 1.5) return 8;
+    if (tileSize < 3) return 4;
+    return 1;
   }
 
   private buildTextures(): void {
@@ -377,8 +401,7 @@ export class PixiRenderer {
       sprite.texture = item.texture;
       sprite.x = item.x;
       sprite.y = item.y;
-      sprite.width = item.width;
-      sprite.height = item.height;
+      sprite.scale.set(item.width / VIEW_BASE_TILE_SIZE, item.height / VIEW_BASE_TILE_SIZE);
       sprite.alpha = item.alpha ?? 1;
       sprite.tint = item.tint ?? 0xffffff;
     }
